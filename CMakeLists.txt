@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(pololu_3pi_comm)
+project(camera_to_fixed_frame)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
@@ -10,7 +10,7 @@ project(pololu_3pi_comm)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   message_generation
-  protocol_msgs
+  geometry_msgs
 )
 
 ## System dependencies are found with CMake's conventions
