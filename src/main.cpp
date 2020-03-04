@@ -1,204 +1,65 @@
 #include "ros/ros.h"
-#include "pololu_3pi_comm/XbeeSend.h"
-
-#include <iostream>
+#include "geometry_msgs/Pose.h"
 
 using namespace std;
 
-class Reader
-{
-public:
-    Reader(unsigned char* data) 
-    {
-        m_Data = data;
-        m_Index = 0;
-    }
+geometry_msgs::Pose fixedMarkerPose;
+bool receivedFixedMarker = false;
 
-    void Reset()
-    {
-        m_Index = 0;
-    }
-
-    void Skip(int count)
-    {
-        m_Index += count;
-    }
-
-    uint8_t ReadByte()
-    {
-        uint8_t value = m_Data[m_Index];
-        m_Index++;
-        return value;
-    }
-
-private:
-    unsigned char* m_Data;
-    int m_Index;
+struct Vector3 {
+    float x;
+    float y;
+    float z;
 };
 
-class Writer
-{
-public:
-    Writer(unsigned char* data, int length) 
-    {
-        m_Data = data;
-        m_Capacity = length;
-        m_Length = 0;
-        m_Index = 0;
-    }
-
-    int Length()
-    {
-        return m_Length;
-    }
-
-    int Capacity()
-    {
-        return m_Capacity;
-    }
-
-    void Reset()
-    {
-        m_Length = 0;
-        m_Index = 0;
-    }
-
-    void Seek(int pos)
-    {
-        m_Index = pos;
-    }
-
-    void WriteByte(unsigned char c)
-    {
-        m_Data[m_Index] = c;
-        m_Index++;
-        m_Length++;
-    }
-
-    void WriteShort(uint16_t value)
-    {
-        m_Data[m_Index + 0] = (uint8_t)(value >> 8) & 0xFF;
-        m_Data[m_Index + 1] = (uint8_t)(value >> 0) & 0xFF;
-        m_Index += 2;
-        m_Length += 2;
-    }
-
-    void WriteInt(int32_t value)
-    {
-        m_Data[m_Index + 0] = (uint8_t)(value >> 8) & 0xFF;
-        m_Data[m_Index + 1] = (uint8_t)(value >> 8) & 0xFF;
-        m_Data[m_Index + 2] = (uint8_t)(value >> 8) & 0xFF;
-        m_Data[m_Index + 3] = (uint8_t)(value >> 8) & 0xFF;
-        m_Index += 4;
-        m_Length += 4;
-    }
-
-    void WriteBytes(const uint8_t* bytes, int count)
-    {
-        std::memcpy(&m_Data[m_Index], bytes, count);
-        m_Index += count;
-        m_Length += count;
-    }
-
-    void Skip(int count)
-    {
-        m_Index += count;
-        m_Length += count;
-    }
-
-private:
-    unsigned char* m_Data;
-    int m_Capacity;
-    int m_Length;
-    int m_Index;
+struct Quat {
+    float x;
+    float y;
+    float z;
+    float w;
 };
 
-class Xbee
+Vector3 fixedMarkerPosition;
+Quat fixedMarkerRotation;
+
+Vector3 newPosition;
+Quat newRotation;
+
+void setPositionAndRotation(const geometry_msgs::Pose::ConstPtr& receivedData, Vector3 position, Quat rotation)
 {
-public:
-    Xbee()
-    {
-        m_Reader = new Reader(m_Data);
-        m_Writer = new Writer(m_Data, 64);
-    }
+    position.x = receivedData->Point->x;
+    position.y = receivedData->Point->y;
+    position.z = receivedData->Point->z;
 
-    ~Xbee()
-    {
-        delete m_Writer;
-        delete m_Reader;
-    }
+    rotation.x = receivedData->Quaternion->x;
+    rotation.y = receivedData->Quaternion->y;
+    rotation.z = receivedData->Quaternion->z;
+    rotation.w = receivedData->Quaternion->w;
+}
 
-    void CreateMessage(const int32_t addressHigh, const int32_t addressLow, std::vector<uint8_t> payload)
-    {
-        m_Writer->Reset();
+void fixedMarkerCallback(const geometry_msgs::Pose::ConstPtr& fixedMarkerData)
+{
+    fixedMarkerPose = fixedMarkerData;
+    receivedFixedMarker = true;
 
-        m_Writer->WriteByte(0x7E); // Start delimiter.
-        m_Writer->WriteShort((uint16_t)11 + (uint16_t)payload.size());
+    setPositionAndRotation(fixedMarkerData, fixedMarkerPosition, fixedMarkerRotation);
+}
 
-        m_Writer->WriteByte(0x00); // Frame type.
-        m_Writer->WriteByte(0x00); // Frame id (always 0 if no response required).
-
-        m_Writer->WriteInt(addressHigh); // Street.
-        m_Writer->WriteInt(addressLow);  // City.
-
-        m_Writer->WriteByte(0x01); // Options : Disable ACK.
-
-        m_Writer->WriteBytes(payload.data(), payload.size()); // PUSH THE PAYLOAD!!
-        m_Writer->WriteByte(ComputeChecksum()); // Checksum.
-
-        // DEBUG
-        m_Reader->Reset();
-
-        cout << "Message size: " << m_Writer->Length() << endl;
-
-        for (int i = 0; i < 20; i++) {
-            cout << hex << static_cast<int>(m_Reader->ReadByte()) << " ";
-        }
-        cout << flush;
-    }
-
-    uint8_t ComputeChecksum()
-    {
-        m_Reader->Reset();
-        m_Reader->Skip(3);
-
-        int length = m_Writer->Length();
-        uint8_t checksum = 0xFF;
-
-        for (int i = 0; i < length; i++) {
-            checksum -= m_Reader->ReadByte();
-        }
-
-        return checksum;
-    }
-
-    bool packetCallback(const protocol_msgs::Packet& packet)
-    {
-        // Debug mode may not be supported o.o!
-        // Potencial error lines below
-        string addrHigh = string(reinterpret_cast<const char*>(packet.addressHigh, packet.addressHigh.size());
-        string addrLow = string(reinterpret_cast<const char*>(packet.addressLow, packet.addressLow.size());
-        string payload = string(reinterpret_cast<const char*>(packet.data, data.size());
-        cout << addrHigh << ":" << addrLow << " -> " << payload << endl;
-
-        CreateMessage(packet.addressHigh, packet.addressLow, data;
-        return true;
-    }
-
-private:
-    Reader* m_Reader;
-    Writer* m_Writer;
-    unsigned char m_Data[64];
-};
+void arucoCallback(const geometry_msgs::Pose::ConstPtr& arucoData)
+{
+}
 
 int main(int argc, char** argv)
 {
-    Xbee xbee;
-
-    ros::init(argc, argv, "xbee_comm");
+    ros::init(argc, argv, "camera_to_fixed_frame");
     ros::NodeHandle nodeHandle;
 
-    ros::Subscriber subscriber = nodeHangle.subscriber("packet", 1000, &Xbee::packetCallback, &xbee);
+    ros::Subscriber subscriber = nodeHandle.subscribe("fixed_marker", 1000, fixedMarkerCallback);
+
+    ros::Subscriber subscriber = nodeHandle.subscribe("aruco", 1000, arucoCallback);
+
+    if (receivedFixedMarker == true)
+        ros::Publisher publisher = nodeHandle.advertise<geometry_msgs::Pose>("fixed_frame", 1000);
 
     ros::spin();
 
