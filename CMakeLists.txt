@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   message_generation
   geometry_msgs
+  tf2_geometry_msgs
 )
 
 ## System dependencies are found with CMake's conventions
