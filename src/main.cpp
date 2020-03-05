@@ -1,52 +1,51 @@
 #include "ros/ros.h"
 #include "geometry_msgs/Pose.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 
 using namespace std;
 
-geometry_msgs::Pose fixedMarkerPose;
 bool receivedFixedMarker = false;
 
-struct Vector3 {
-    float x;
-    float y;
-    float z;
-};
+tf2::Vector3 referencePosition;
+if2::Quaternion referenceRotation;
 
-struct Quat {
-    float x;
-    float y;
-    float z;
-    float w;
-};
+tf2::Vector3 sendingPosition;
+tf2::Quaternion sendingRotation;
 
-Vector3 fixedMarkerPosition;
-Quat fixedMarkerRotation;
+ros::Publisher publisher;
 
-Vector3 newPosition;
-Quat newRotation;
-
-void setPositionAndRotation(const geometry_msgs::Pose::ConstPtr& receivedData, Vector3 position, Quat rotation)
+void referenceCallback(const geometry_msgs::Pose::ConstPtr& referenceData)
 {
-    position.x = receivedData->Point->x;
-    position.y = receivedData->Point->y;
-    position.z = receivedData->Point->z;
-
-    rotation.x = receivedData->Quaternion->x;
-    rotation.y = receivedData->Quaternion->y;
-    rotation.z = receivedData->Quaternion->z;
-    rotation.w = receivedData->Quaternion->w;
-}
-
-void fixedMarkerCallback(const geometry_msgs::Pose::ConstPtr& fixedMarkerData)
-{
-    fixedMarkerPose = fixedMarkerData;
     receivedFixedMarker = true;
 
-    setPositionAndRotation(fixedMarkerData, fixedMarkerPosition, fixedMarkerRotation);
+    fromMsg(referenceData->Point, referencePosition);
+    fromMsg(referenceData->Quaternion, referenceQuarternion);
 }
 
-void arucoCallback(const geometry_msgs::Pose::ConstPtr& arucoData)
+void inPoseCallback(const geometry_msgs::Pose::ConstPtr& receivedData)
 {
+    if (receveidFixedMarker == false)
+        return;
+
+    tf2::Vector3 temporaryPosition; 
+    tf2::Quaternion temporaryRotation;
+    
+    fromMsg(receivedData->Point, temporaryPosition);
+    fromMsg(receivedData->Quaternion, temporaryRotation);
+
+    temporaryPosition = referencePosition - temporaryPosition;
+    sendingPosition = quatRotate(referenceRotation, temporaryPosition);
+
+    sendingRotation = referenceRotation.inverse() * temporaryRotation;
+
+    geometry_msgs::Point positionMessage = toMsg(sendingPosition, positionMessage&);
+    geometry_msgs::Quaternion quaternionMessage = toMsg(sendingRotation);
+
+    geometry_msg::Pose fullMessage;
+    fullMessage.Point = positionMessage;
+    fullMessage.Quaternion = quaternionMessage;
+
+    publisher.publish(fullMessage);
 }
 
 int main(int argc, char** argv)
@@ -54,12 +53,11 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "camera_to_fixed_frame");
     ros::NodeHandle nodeHandle;
 
-    ros::Subscriber subscriber = nodeHandle.subscribe("fixed_marker", 1000, fixedMarkerCallback);
+    ros::Subscriber subscriber = nodeHandle.subscribe("reference_pose", 1000, referenceCallback);
 
-    ros::Subscriber subscriber = nodeHandle.subscribe("aruco", 1000, arucoCallback);
+    ros::Subscriber subscriber = nodeHandle.subscribe("in_pose", 1000, inPoseCallback);
 
-    if (receivedFixedMarker == true)
-        ros::Publisher publisher = nodeHandle.advertise<geometry_msgs::Pose>("fixed_frame", 1000);
+    publisher = nodeHandle.advertise<geometry_msgs::Pose>("out_pose", 1000);
 
     ros::spin();
 
