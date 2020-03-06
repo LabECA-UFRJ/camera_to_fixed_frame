@@ -1,5 +1,5 @@
 #include "ros/ros.h"
-#include "geometry_msgs/Pose.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 
 using namespace std;
@@ -14,15 +14,15 @@ tf2::Quaternion sendingRotation;
 
 ros::Publisher publisher;
 
-void referenceCallback(const geometry_msgs::Pose::ConstPtr& referenceData)
+void referenceCallback(const geometry_msgs::PoseStamped::ConstPtr& referenceData)
 {
     receivedFixedMarker = true;
 
-    fromMsg(referenceData->position, referencePosition);
-    fromMsg(referenceData->orientation, referenceRotation);
+    fromMsg(referenceData->pose.position, referencePosition);
+    fromMsg(referenceData->pose.orientation, referenceRotation);
 }
 
-void inPoseCallback(const geometry_msgs::Pose::ConstPtr& receivedData)
+void inPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &receivedData)
 {
     if (receivedFixedMarker == false)
         return;
@@ -30,8 +30,8 @@ void inPoseCallback(const geometry_msgs::Pose::ConstPtr& receivedData)
     tf2::Vector3 temporaryPosition; 
     tf2::Quaternion temporaryRotation;
     
-    fromMsg(receivedData->position, temporaryPosition);
-    fromMsg(receivedData->orientation, temporaryRotation);
+    fromMsg(receivedData->pose.position, temporaryPosition);
+    fromMsg(receivedData->pose.orientation, temporaryRotation);
 
     temporaryPosition = referencePosition - temporaryPosition;
     sendingPosition = quatRotate(referenceRotation, temporaryPosition);
